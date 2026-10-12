@@ -1,0 +1,26 @@
+name: Birthday reminder
+
+on:
+  schedule:
+    - cron: '0 5 * * *'   # every day at 06:00 Lagos time (UTC+1)
+  workflow_dispatch:
+    inputs:
+      days_ahead:
+        description: 'Days ahead (1 = tomorrow, 0 = today - use 0 to test)'
+        default: '1'
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund
+      - run: node scripts/birthday-reminder.js
+        env:
+          DAYS_AHEAD: ${{ github.event.inputs.days_ahead || '1' }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
