@@ -47,26 +47,29 @@ import {getAuth,GoogleAuthProvider,signInWithPopup,signInWithRedirect,onAuthStat
 import {getFirestore,doc,collection,setDoc,deleteDoc,onSnapshot} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {FIREBASE_CONFIG,ADMIN_EMAIL,DATABASE_ID} from "./firebase-config.js";
 const CL=['Love','Joy','Peace'],MO=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],TABS=[['members','Members'],['att','Attendance'],['rep','Reports'],['exp','Export'],['acc','Access & Roles']];
-let M={},A={},db=null,dl=null,role=null,user=null,ready=false,R={},tab='members',q='',fc='',fb='',editId=null,aDate=lastSunday(),aCls='Love',aSel=null,rCls='';
+let M={},A={},MP={},MC={},priv=false,Q={},MR=null,db=null,dl=null,role=null,user=null,ready=false,R={},tab='members',q='',fc='',fb='',editId=null,aDate=lastSunday(),aCls='Love',aSel=null,rCls='';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function lastSunday(){const d=new Date();d.setDate(d.getDate()-d.getDay());return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
 function toast(t){const e=$('#toast');e.textContent=t;e.classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>e.classList.remove('on'),3000)}
 const S=c=>c==='members'?M:c==='roles'?R:A,msg=e=>(e&&e.code==='permission-denied')?'You do not have permission for that':((e&&(e.message||e.code))||'error');
-async function put(col,id,obj){S(col)[id]=obj;try{await setDoc(doc(fdb,col,id),obj)}catch(e){toast('Save failed: '+msg(e));return false}return true}
-async function rem(col,id){delete S(col)[id];try{await deleteDoc(doc(fdb,col,id))}catch(e){toast('Delete failed: '+msg(e))}}
+const maskP=p=>{p=String(p||'').replace(/[\s()-]/g,'');if(!p)return'';if(p[0]==='0')p='+234'+p.slice(1);else if(/^234/.test(p))p='+'+p;return p.slice(0,6)+'*******'};
+const maskA=a=>{a=String(a||'').trim();return a?a.slice(0,2)+'******':''};
+function merge(){M={};for(const id in MP){const x={...MP[id],...(MC[id]||{})};if(!priv){x.phone=x.phoneM||'';x.address=x.addrM||''}M[id]=x}}
+async function put(col,id,obj){S(col)[id]=obj;try{if(col==='members'){const{phone='',address='',...pub}=obj;pub.phoneM=maskP(phone);pub.addrM=maskA(address);await setDoc(doc(fdb,'members',id),pub);await setDoc(doc(fdb,'contacts',id),{phone,address})}else await setDoc(doc(fdb,col,id),obj)}catch(e){toast('Save failed: '+msg(e));return false}return true}
+async function rem(col,id){delete S(col)[id];try{await deleteDoc(doc(fdb,col,id));if(col==='members')await deleteDoc(doc(fdb,'contacts',id))}catch(e){toast('Delete failed: '+msg(e))}}
 const mem=()=>Object.entries(M).map(([id,m])=>({id,...m})).sort((a,b)=>a.name.localeCompare(b.name));
 const bday=m=>m.day&&m.month?m.day+' '+MO[m.month-1]:'—';
-function nav(){$('#nav').innerHTML=TABS.map(([k,l])=>`<button class="${k===tab?'on':''}" data-t="${k}">${l}</button>`).join('')}
+function nav(){$('#nav').innerHTML=TABS.map(([k,l])=>`<button class="${k===tab?'on':''}" data-t="${k}">${l}${k==='acc'&&isAdm()&&Object.keys(Q).length?' ('+Object.keys(Q).length+')':''}</button>`).join('')}
 const RL={admin:'Administrator',recorder:'Recorder',viewer:'Viewer'},canW=()=>role!=='viewer',isAdm=()=>role==='admin';
-function chip(){const w=$('#who');if(!w)return;w.innerHTML=user&&role?`<span class="role ${role}">${RL[role]}</span><span style="font-size:12px;color:#b9c6f0;margin:0 8px">${esc(user.email)}</span><button class="b s" data-a="out">Sign out</button>`:''}
-function gate(){if(!CFG_OK)return box('Setup needed','Firebase is not connected yet. Open <b>firebase-config.js</b> and paste your Firebase details (see the setup guide).');if(!ready)return '<p class="mu">Loading…</p>';if(!user)return box('Welcome','Sign in with your Google account to open the YAYA Sunday School register.','<button class="b p" data-a="login" style="padding:12px 22px;font-size:15px">Sign in with Google</button>');if(!role)return box('Access pending','You are signed in as <b>'+esc(user.email)+'</b>, but have not been given access yet. Please ask the administrator to add this email under Access &amp; Roles.','<button class="b" data-a="out">Sign out</button>');return ''}
+function chip(){const w=$('#who');if(!w)return;w.innerHTML=user?`<span class="role ${priv?role:'viewer'}">${priv?RL[role]:'Guest viewer'}</span><span style="font-size:12px;color:#b9c6f0;margin:0 8px">${esc(user.email)}</span><button class="b s" data-a="out">Sign out</button>`:'<span class="role viewer">Guest viewer</span> <button class="b s" data-a="login" style="margin-left:8px">Staff sign in</button>'}
+function gate(){if(!CFG_OK)return box('Setup needed','Firebase is not connected yet. Open <b>firebase-config.js</b> and paste your Firebase details.');if(!ready)return '<p class="mu">Loading…</p>';return ''}
 const box=(h,p,b='')=>`<div style="text-align:center;padding:40px 12px;max-width:520px;margin:auto"><h2 style="color:var(--blue);margin:0 0 8px">${h}</h2><p class="mu">${p}</p>${b}</div>`;
 function render(){const g=gate();$('#nav').style.display=g?'none':'';nav();chip();$('#view').innerHTML=g||({members:vMembers,att:vAtt,rep:vRep,exp:vExp,acc:vAcc})[tab]()}
 function banner(){return ''}
 function vMembers(){const mo=new Date().getMonth()+1,L=mem().filter(m=>(!fc||m.cls===fc)&&(!fb||+m.month===+fb)&&(!q||(m.name+m.phone+m.address).toLowerCase().includes(q.toLowerCase())));
 const all=mem(),bm=all.filter(m=>+m.month===mo).length;
 return banner()+`<div class="stats"><div class="stat"><b>${all.length}</b><span>Total members</span></div>${CL.map(c=>`<div class="stat"><b>${all.filter(m=>m.cls===c).length}</b><span>${c} Class</span></div>`).join('')}<div class="stat"><b>${bm}</b><span>Birthdays in ${MO[mo-1]}</span></div></div>
-${upc()}<div class="bar"><input id="q" placeholder="Search name, phone, address…" value="${esc(q)}" style="flex:1;min-width:180px"><select id="fcl"><option value="">All classes</option>${CL.map(c=>`<option ${c===fc?'selected':''}>${c}</option>`).join('')}</select><select id="fbm"><option value="">All birth months</option>${MO.map((m,i)=>`<option value="${i+1}" ${+fb===i+1?'selected':''}>${m}</option>`).join('')}</select>${canW()?'<button class="b p" data-a="add">+ Add member</button>':''}<button class="b" data-x="mxlsx">Export Excel</button></div>
+${priv?'':'<p class="note">Phone numbers and addresses are partly hidden. Open <b>Access &amp; Roles</b> to request full access.</p>'}${upc()}<div class="bar"><input id="q" placeholder="Search name, phone, address…" value="${esc(q)}" style="flex:1;min-width:180px"><select id="fcl"><option value="">All classes</option>${CL.map(c=>`<option ${c===fc?'selected':''}>${c}</option>`).join('')}</select><select id="fbm"><option value="">All birth months</option>${MO.map((m,i)=>`<option value="${i+1}" ${+fb===i+1?'selected':''}>${m}</option>`).join('')}</select>${canW()?'<button class="b p" data-a="add">+ Add member</button>':''}<button class="b" data-x="mxlsx">Export Excel</button></div>
 <div class="tw"><table><tr><th>#</th><th>Name</th><th>Class</th><th>Phone</th><th>Address</th><th>Birthday</th><th></th></tr>${L.map((m,i)=>`<tr class="${+m.month===mo?'bd':''}"><td class="mu">${i+1}</td><td><b>${esc(m.name)}</b></td><td><span class="tag ${m.cls}">${m.cls}</span></td><td>${esc(m.phone)}</td><td class="w">${esc(m.address)}</td><td>${bday(m)}</td><td>${canW()?`<button class="b s" data-a="edit" data-id="${m.id}">Edit</button>`:''} ${isAdm()?`<button class="b s r" data-a="del" data-id="${m.id}">Delete</button>`:''}</td></tr>`).join('')||'<tr><td colspan="7" class="mu">No members yet — click “Add member”.</td></tr>'}</table></div><p class="mu" style="font-size:12px">Highlighted rows = birthday this month.</p>`}
 function upc(){const n=new Date(),t0=new Date(n.getFullYear(),n.getMonth(),n.getDate());const L=mem().filter(m=>m.day&&m.month).map(m=>{let d=new Date(n.getFullYear(),m.month-1,m.day);if(d<t0)d=new Date(n.getFullYear()+1,m.month-1,m.day);return{m,k:Math.round((d-t0)/864e5)}}).filter(x=>x.k<=7).sort((a,b)=>a.k-b.k);
 return L.length?`<div class="note"><b>Upcoming birthdays (next 7 days):</b> ${L.map(x=>`${x.k===0?'Today':x.k===1?'Tomorrow':x.m.day+' '+MO[x.m.month-1]} – ${esc(x.m.name)} (${x.m.cls})`).join(' · ')}</div>`:''}
@@ -89,22 +92,30 @@ function vExp(){return `<div class="hero"><div><h3>Complete Excel workbook</h3><
 <div class="stat"><b>Attendance register</b><span>Members × Sundays (P = present). CSV uses the class chosen in Reports (${rCls||'Love'}).</span><div class="btns"><button class="b" data-x="axlsx">Excel</button><button class="b" data-x="acsv">CSV</button></div></div>
 <div class="stat"><b>Backup &amp; restore</b><span>Complete data file (JSON)</span><div class="btns"><button class="b" data-x="json">Backup</button>${isAdm()?'<button class="b" data-x="imp">Restore</button><input type="file" id="fi" accept=".json" hidden>':''}</div></div>
 <div class="stat"><b>Print / PDF</b><span>Open the report, then choose Save as PDF</span><div class="btns"><button class="b" data-x="prt">Print report</button></div></div></div>`}
-function vAcc(){const mgr=isAdm()?`<h3>Team access</h3><div class="bar"><input id="re" type="email" placeholder="Gmail address of the person" style="flex:1;min-width:220px"><select id="rr"><option value="recorder">Recorder</option><option value="viewer">Viewer</option><option value="admin">Administrator</option></select><button class="b p" data-a="grant">Grant access</button></div>
+function reqTable(){const L=Object.entries(Q).sort((a,b)=>(a[1].at||0)-(b[1].at||0));
+return `<h3>Access requests${L.length?' ('+L.length+')':''}</h3>`+(L.length?`<div class="tw"><table><tr><th>Name</th><th>Email</th><th>Wants</th><th>Note</th><th>Date</th><th>Give role</th><th></th></tr>${L.map(([e,r])=>`<tr><td>${esc(r.name||'—')}</td><td>${esc(e)}</td><td>${RL[r.role]||esc(r.role)}</td><td class="w">${esc(r.note||'')}</td><td>${r.at?new Date(r.at).toLocaleDateString():''}</td><td><select data-rr="${esc(e)}">${['viewer','recorder','admin'].map(k=>`<option value="${k}" ${r.role===k?'selected':''}>${RL[k]}</option>`).join('')}</select></td><td><button class="b s g" data-a="accept" data-e="${esc(e)}">Accept</button> <button class="b s r" data-a="decline" data-e="${esc(e)}">Decline</button></td></tr>`).join('')}</table></div>`:'<p class="mu">No pending requests.</p>')}
+function reqBox(){if(!user)return '<div class="note">Want to see full phone numbers and addresses, or take attendance? Sign in with Google, then request access.<br><br><button class="b p" data-a="login">Sign in to request access</button></div>';
+if(MR)return `<div class="note">Your request for <b>${RL[MR.role]||esc(MR.role)}</b> access is pending. The administrator will review it.</div>`;
+return '<div class="hero" style="display:block"><h3>Request special access</h3><p style="margin-bottom:10px">Phone numbers and addresses are partly hidden for guests. Ask the administrator for more access.</p><div class="bar" style="margin:0"><select id="rqr"><option value="viewer">Viewer – see full contact details</option><option value="recorder">Recorder – take attendance</option></select><input id="rqn" placeholder="Your class / reason (optional)" style="flex:1;min-width:200px"><button class="b" data-a="req" style="background:#c9a24b;border-color:#c9a24b;color:#0b1f4d">Send request</button></div></div>'}
+async function reqAccess(){if(!user)return login();try{await setDoc(doc(fdb,'requests',user.email.toLowerCase()),{email:user.email,name:user.displayName||'',role:$('#rqr').value,note:$('#rqn').value.trim().slice(0,200),status:'pending',at:Date.now()});toast('Request sent to the administrator')}catch(e){toast('Could not send: '+msg(e))}}
+function vAcc(){const mgr=isAdm()?`${reqTable()}<h3>Team access</h3><div class="bar"><input id="re" type="email" placeholder="Gmail address of the person" style="flex:1;min-width:220px"><select id="rr"><option value="recorder">Recorder</option><option value="viewer">Viewer</option><option value="admin">Administrator</option></select><button class="b p" data-a="grant">Grant access</button></div>
 <div class="tw"><table><tr><th>Email</th><th>Role</th><th></th></tr><tr><td>${esc(ADMIN_EMAIL)}</td><td><span class="role admin">Administrator</span></td><td class="mu">Owner</td></tr>${Object.entries(R).sort().map(([e,r])=>`<tr><td>${esc(e)}</td><td><select data-re="${esc(e)}">${['admin','recorder','viewer'].map(k=>`<option value="${k}" ${r.role===k?'selected':''}>${RL[k]}</option>`).join('')}</select></td><td><button class="b s r" data-a="revoke" data-e="${esc(e)}">Remove</button></td></tr>`).join('')}</table></div>`:'';
-return `<div class="hero"><div><h3>${esc(user.displayName||user.email)} <span class="role ${role}">${RL[role]}</span></h3><p>${esc(user.email)}</p></div></div>
+return `<div class="hero"><div><h3>${user?esc(user.displayName||user.email):'Guest'} <span class="role ${priv?role:'viewer'}">${priv?RL[role]:'Guest viewer'}</span></h3><p>${user?esc(user.email):'Viewing without signing in. Staff can sign in with Google for more access.'}</p></div></div>
+${isAdm()||priv?'':reqBox()}
 <div class="tw"><table><tr><th>Role</th><th>What they can do</th></tr>
 <tr><td><span class="role admin">Administrator</span></td><td class="w">Everything: members, attendance, delete, restore backups, grant access</td></tr>
 <tr><td><span class="role recorder">Recorder</span></td><td class="w">Take attendance, add or edit members, export</td></tr>
-<tr><td><span class="role viewer">Viewer</span></td><td class="w">Read-only: view members and reports, export</td></tr></table></div>${mgr}
-<p class="mu">Everyone signs in with a Google account. Changes sync live to every signed-in screen, and access rules are enforced by the database.</p>`}
-function rows(){return [['Name','Class','Phone','Address','Birthday (Day)','Birthday (Month)'],...mem().map(m=>[m.name,m.cls,m.phone||'',m.address||'',m.day||'',m.month?MO[m.month-1]:''])]}
-function matrix(c){const ds=Object.values(A).filter(r=>r.cls===c).sort((a,b)=>a.date.localeCompare(b.date)),L=mem().filter(m=>m.cls===c);return [['Name','Phone',...ds.map(d=>d.date),'Total Present'],...L.map(m=>{const f=ds.map(d=>d.present.includes(m.id)?'P':'-');return [m.name,m.phone||'',...f,f.filter(x=>x==='P').length]})]}
+<tr><td><span class="role viewer">Viewer</span></td><td class="w">Read-only, plus can see phone numbers and addresses. Assigned by the administrator</td></tr><tr><td><span class="role viewer">Guest viewer</span></td><td class="w">Anyone with the link, no sign-in or role needed. Read-only: names, classes, birthdays, attendance and reports. Phone numbers and addresses are shown masked, e.g. +23480******* and Ad******</td></tr></table></div>${mgr}
+<p class="mu">Staff sign in with a Google account. Changes sync live to every screen, and access rules are enforced by the database.</p>`}
+function rowsF(){return [['Name','Class','Phone','Address','Birthday (Day)','Birthday (Month)'],...mem().map(m=>[m.name,m.cls,m.phone||'',m.address||'',m.day||'',m.month?MO[m.month-1]:''])]}
+function matrixF(c){const ds=Object.values(A).filter(r=>r.cls===c).sort((a,b)=>a.date.localeCompare(b.date)),L=mem().filter(m=>m.cls===c);return [['Name','Phone',...ds.map(d=>d.date),'Total Present'],...L.map(m=>{const f=ds.map(d=>d.present.includes(m.id)?'P':'-');return [m.name,m.phone||'',...f,f.filter(x=>x==='P').length]})]}
 const csv=r=>'\ufeff'+r.map(x=>x.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\r\n');
 function save(name,data){const ty=name.endsWith('.xlsx')?'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':name.endsWith('.json')?'application/json':'text/csv;charset=utf-8';const u=URL.createObjectURL(new Blob([data],{type:ty})),a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),3000)}
 function xl(wb){return new Uint8Array(XLSX.write(wb,{bookType:'xlsx',type:'array'}))}
 function sheet(a){const s=XLSX.utils.aoa_to_sheet(a);s['!cols']=a[0].map((_,i)=>({wch:Math.min(40,Math.max(8,...a.map(r=>String(r[i]??'').length))+2)}));return s}
-function bdays(){return [['Month','Day','Name','Class','Phone'],...mem().filter(m=>m.month).sort((a,b)=>a.month-b.month||a.day-b.day).map(m=>[MO[m.month-1],m.day,m.name,m.cls,m.phone||''])]}
+function bdaysF(){return [['Month','Day','Name','Class','Phone'],...mem().filter(m=>m.month).sort((a,b)=>a.month-b.month||a.day-b.day).map(m=>[MO[m.month-1],m.day,m.name,m.cls,m.phone||''])]}
 function logRows(){return [['Date','Class','Present','Absent'],...Object.values(A).sort((a,b)=>b.date.localeCompare(a.date)).map(r=>[r.date,r.cls,r.present.length,Math.max(0,mem().filter(m=>m.cls===r.cls).length-r.present.length)])]}
+const rows=rowsF,matrix=matrixF,bdays=bdaysF;
 function exportX(x){const t=new Date().toISOString().slice(0,10),P='RCCG-LifeGate-YAYA-';
 if(x==='mcsv')save(P+'Members-'+t+'.csv',csv(rows()));
 else if(x==='acsv')save(P+'Attendance-'+(rCls||'Love')+'-'+t+'.csv',csv(matrix(rCls||'Love')));
@@ -132,7 +143,9 @@ else if(a==='del'){if(confirm('Delete '+M[id].name+'? Their past attendance mark
 else if(a==='all'){mem().filter(m=>m.cls===aCls).forEach(m=>aSel.s.add(m.id));render()}
 else if(a==='none'){aSel.s.clear();render()}
 else if(a==='saveatt'){const ids=mem().filter(m=>m.cls===aCls&&aSel.s.has(m.id)).map(m=>m.id);if(await put('attendance',key(),{date:aDate,cls:aCls,present:ids})){toast('Attendance saved — '+ids.length+' present');render()}}
-else if(a==='login'){login()}else if(a==='out'){signOut(auth)}else if(a==='grant'){grant()}else if(a==='revoke'){if(confirm('Remove access for '+t.dataset.e+'?')){await rem('roles',t.dataset.e);render()}}
+else if(a==='login'){login()}else if(a==='req'){reqAccess()}
+else if(a==='accept'){const em=t.dataset.e,s=[...document.querySelectorAll('select[data-rr]')].find(x=>x.dataset.rr===em);if(s&&await put('roles',em,{role:s.value,by:user.email,at:Date.now()})){await deleteDoc(doc(fdb,'requests',em));delete Q[em];toast('Access granted to '+em);render()}}
+else if(a==='decline'){if(confirm('Decline the request from '+t.dataset.e+'?')){await deleteDoc(doc(fdb,'requests',t.dataset.e));delete Q[t.dataset.e];render()}}else if(a==='out'){signOut(auth)}else if(a==='grant'){grant()}else if(a==='revoke'){if(confirm('Remove access for '+t.dataset.e+'?')){await rem('roles',t.dataset.e);render()}}
 else if(a==='open'){aDate=t.dataset.d;aCls=t.dataset.c;aSel=null;tab='att';render()}});
 document.addEventListener('change',e=>{const t=e.target;
 if(t.dataset.re){put('roles',t.dataset.re,{role:t.value,by:user.email,at:Date.now()});toast('Role updated');return}
@@ -140,18 +153,22 @@ if(t.dataset.m){t.checked?aSel.s.add(t.dataset.m):aSel.s.delete(t.dataset.m);ret
 if(t.id==='fcl'){fc=t.value;render()}else if(t.id==='fbm'){fb=t.value;render()}else if(t.id==='ad'){aDate=t.value||aDate;aSel=null;render()}else if(t.id==='ac'){aCls=t.value;aSel=null;render()}else if(t.id==='rc'){rCls=t.value;render()}
 else if(t.id==='fi'&&t.files[0]){const r=new FileReader();r.onload=async()=>{try{const d=JSON.parse(r.result);if(!d.M||!d.A)throw 0;if(!confirm('Restore '+Object.keys(d.M).length+' members and '+Object.keys(d.A).length+' attendance records? Matching records will be overwritten.'))return;for(const k in d.M)await put('members',k,d.M[k]);for(const k in d.A)await put('attendance',k,d.A[k]);toast('Backup restored');render()}catch(x){toast('Not a valid backup file')}};r.readAsText(t.files[0]);t.value=''}});
 document.addEventListener('input',e=>{if(e.target.id==='q'){q=e.target.value;const p=e.target.selectionStart;render();const i=$('#q');i.focus();i.setSelectionRange(p,p)}});
-let auth,fdb,du=[],ru=null,dOn=false;
+let auth,fdb,du=[],ru=null,rq=null,mcReady=false,fixing=new Set(),dOn=false;
 const CFG_OK=!/^PASTE/.test(String(FIREBASE_CONFIG.apiKey||'PASTE'));
-function stopData(){du.forEach(f=>f());du=[];dOn=false;M={};A={};R={}}
+function stopData(){du.forEach(f=>f());du=[];dOn=false;mcReady=false;M={};A={};R={};MP={};MC={};Q={}}
+function maskFix(){if(role!=='admin'||!mcReady)return;for(const id in MP){const m=MP[id],f=MC[id]||m,pm=maskP(f.phone),am=maskA(f.address);if((m.phoneM!==pm||m.addrM!==am||'phone' in m||'address' in m)&&!fixing.has(id)){fixing.add(id);const{phone,address,phoneM,addrM,...pub}=m;(async()=>{if(!MC[id]&&('phone' in m||'address' in m))await setDoc(doc(fdb,'contacts',id),{phone:m.phone||'',address:m.address||''});await setDoc(doc(fdb,'members',id),{...pub,phoneM:pm,addrM:am})})().catch(()=>{}).finally(()=>fixing.delete(id))}}}
 function startData(){if(dOn)return;dOn=true;const sub=(c,f)=>du.push(onSnapshot(collection(fdb,c),s=>{const o={};s.docs.forEach(d=>o[d.id]=d.data());f(o);if(!$('#dlg').open&&document.activeElement.id!=='q')render()},e=>toast('Database: '+msg(e))));
-sub('members',o=>M=o);sub('attendance',o=>A=o);if(role==='admin')sub('roles',o=>R=o)}
+sub('members',o=>{MP=o;merge();maskFix()});sub('attendance',o=>A=o);
+if(priv)sub('contacts',o=>{MC=o;mcReady=true;merge();maskFix()});if(role==='admin'){sub('roles',o=>R=o);sub('requests',o=>Q=o)}}
 function login(){const p=new GoogleAuthProvider();signInWithPopup(auth,p).catch(e=>{if(e.code==='auth/popup-blocked'||e.code==='auth/operation-not-supported-in-this-environment')signInWithRedirect(auth,p);else if(!/popup-closed|cancelled/.test(e.code))toast(msg(e))})}
 async function grant(){const e=$('#re').value.trim().toLowerCase();if(!/^\S+@\S+\.\S+$/.test(e))return toast('Enter a valid Gmail address');if(await put('roles',e,{role:$('#rr').value,by:user.email,at:Date.now()})){toast('Access granted to '+e);render()}}
 if(CFG_OK){const app=initializeApp(FIREBASE_CONFIG);auth=getAuth(app);fdb=DATABASE_ID?getFirestore(app,DATABASE_ID):getFirestore(app);
-onAuthStateChanged(auth,u=>{if(ru){ru();ru=null}stopData();user=u;role=null;ready=true;
-if(u){const em=(u.email||'').toLowerCase();
-if(em===ADMIN_EMAIL.toLowerCase()){role='admin';startData()}
-else ru=onSnapshot(doc(fdb,'roles',em),s=>{const r=s.exists()?s.data().role:null;if(!r){role=null;stopData()}else if(r!==role){role=r;stopData();startData()}render()},()=>{role=null;stopData();render()})}
-render()})}else ready=true;
+role='viewer';ready=true;startData();
+onAuthStateChanged(auth,u=>{if(ru){ru();ru=null}if(rq){rq();rq=null}MR=null;user=u;
+const setRole=(r,p)=>{if(r!==role||p!==priv){role=r;priv=p;stopData();startData()}render()};
+if(!u)return setRole('viewer',false);
+const em=(u.email||'').toLowerCase();
+if(em===ADMIN_EMAIL.toLowerCase())setRole('admin',true);
+else{rq=onSnapshot(doc(fdb,'requests',em),s=>{MR=s.exists()?s.data():null;render()},()=>{});ru=onSnapshot(doc(fdb,'roles',em),s=>setRole(s.exists()?s.data().role:'viewer',s.exists()),()=>setRole('viewer',false))}})}else ready=true;
 fill();render();
 </script></body></html>
